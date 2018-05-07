@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Apr 24 12:46:09 2018
+
+@author: ighazi
+"""
+
+import sys, os
+import torch
+import visdom
+import argparse
+import numpy as np
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.models as models
+
+from torch.autograd import Variable
+from torch.utils import data
+from tqdm import tqdm
+
+from ptsemseg.models import get_model
+from ptsemseg.models import fcn8s
+
+from ptsemseg.loader import get_loader, get_data_path
+from ptsemseg.metrics import runningScore
+from ptsemseg.loss import *
+from ptsemseg.augmentations import *
+
+def train():
+
+    # Setup Augmentations
+    data_aug= Compose([RandomRotate(10),                                        
+                       RandomHorizontallyFlip()])
+    n_epoch=10
+
+    # Setup Dataloader
+    data_loader = get_loader("pascal")
+    data_path = get_data_path("pascal")
+    
+    t_loader = data_loader(data_path, is_transform=True, img_size=(400,200), augmentations=data_aug, img_norm=True)
+  
+    v_loader = data_loader(data_path, is_transform=True, split='val', img_size=(400,200), img_norm=True)
+    
+    n_classes = t_loader.n_classes
+    print(n_classes)
+    trainloader = data.DataLoader(t_loader, batch_size=1, num_workers=8, shuffle=True)
+    valloader = data.DataLoader(v_loader, batch_size=1, num_workers=8)
+    
+    running_metrics = runningScore(n_classes)
+    # Setup visdom for visualization
+    if True:
+        vis = visdom.Visdom()
+
+        loss_window = vis.line(X=torch.zeros((1,)).cpu(),
+                           Y=torch.zeros((1)).cpu(),
+                           opts=dict(xlabel='minibatches',
+                                     ylabel='Loss',
+                                     title='Training Loss',
+                                     legend=['Loss']))
+    #model = get_model('fcn8s', n_classes)
+    model= fcn8s(n_classes)
+    
+    #Checks if the model definition also includes the type of optimizer to use
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0004, momentum=0.99, weight_decay=5e-4)
+    optimizer.zero_grad();
+    #if hasattr(model.module, 'optimizer'):
+    #    optimizer = model.module.optimizer
+    #else:
+    #    optimizer = torch.optim.SGD(model.parameters(), lr=args.l_rate, momentum=0.99, weight_decay=5e-4)
+
+    #Checks if the model definition also includes the loss function to use else
+    #uses the generic cross_entropy2D
+    loss_fn = cross_entropy2d
+    
+    #if hasattr(model.module, 'loss'):
+    #    print('Using custom loss')
+    #    loss_fn = model.module.loss
+    #else:
+    #    loss_fn = cross_entropy2d
+    best_iou = -100.0 
+    for epoch in range(5):
+        model.train()
+        for i, (images, labels) in enumerate(trainloader):
+            images = Variable(images)
+            labels = Variable(labels)
+            print(i)
+            optimizer.zero_grad()
+            outputs = model(images)
+
+            loss = loss_fn(input=outputs, target=labels)
+            
+            loss.backward()
+            optimizer.step()
+            
+            if True:
+                vis.line(
+                    X=torch.ones((1, 1)).cpu() * i,
+                    Y=torch.Tensor([loss.data[0]]).unsqueeze(0).cpu(),
+                    win=loss_window,
+                    update='append')
+
+            if (i+1) % 1 == 0:
+                print("Epoch [%d/%d] Loss: %.4f" % (epoch, n_epoch, loss.data[0]))
+                model.eval()
+       
+    for i_val, (images_val, labels_val) in tqdm(enumerate(valloader)):
+        images_val = Variable(images_val, volatile=True)
+        labels_val = Variable(labels_val, volatile=True)
+        print("Here")
+        outputs = model(images_val)
+        pred = outputs.data.max(1)[1].cpu().numpy()
+        gt = labels_val.data.cpu().numpy()
+        running_metrics.update(gt, pred)
+
+    score, class_iou = running_metrics.get_scores()
+    for k, v in score.items():
+        print(k, v)
+        print("Here Now")
+    running_metrics.reset()
+
+    if score['Mean IoU : \t'] >= best_iou:
+        best_iou = score['Mean IoU : \t']
+        state = {'epoch': epoch+1,
+                 'model_state': model.state_dict(),
+                 'optimizer_state' : optimizer.state_dict(),}
+        torch.save(state, "{}_{}_best_model.pkl".format('fcn8s', 'pascal'))
+
+           
+    """ 
+    if args.resume is not None:                                         
+        if os.path.isfile(args.resume):
+            print("Loading model and optimizer from checkpoint '{}'".format(args.resume))
+            checkpoint = torch.load(args.resume)
+            model.load_state_dict(checkpoint['model_state'])
+            optimizer.load_state_dict(checkpoint['optimizer_state'])
+            print("Loaded checkpoint '{}' (epoch {})"                    
+                  .format(args.resume, checkpoint['epoch']))
+        else:
+            print("No checkpoint found at '{}'".format(args.resume)) 
+    """
+
+    
+
+if __name__ == '__main__':
+ 
+    train()
