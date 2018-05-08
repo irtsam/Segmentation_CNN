@@ -1,13 +1,10 @@
+#Adapted from https://github.com/meetshah1995/pytorch-semseg/tree/master/ptsemseg
 import torchvision.models as models
 
 from ptsemseg.models.fcn import *
 """
 from ptsemseg.models.segnet import *
-from ptsemseg.models.unet import *
-from ptsemseg.models.pspnet import *
-from ptsemseg.models.icnet import *
-from ptsemseg.models.linknet import *
-from ptsemseg.models.frrn import *
+
 
 """
 def get_model(name, n_classes, version=None):
