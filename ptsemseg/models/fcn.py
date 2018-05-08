@@ -1,3 +1,5 @@
+#Adapted from https://github.com/meetshah1995/pytorch-semseg/tree/master/
+
 import torch.nn as nn
 import torch.nn.functional as F
 
