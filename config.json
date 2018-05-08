@@ -3,5 +3,8 @@
   {
     "data_path": "/home/ighazi/python/Pytorch_SemSeg/VOCdevkit/VOC2012"
   },
-
+"sbd":
+  {
+    "data_path": "/home/ighazi/python/Pytorch_SemSeg/benchmark_RELEASE"
+  },
 }
